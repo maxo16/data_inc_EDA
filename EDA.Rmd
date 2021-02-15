@@ -1,0 +1,85 @@
+---
+title: "Challenge EDA"
+author: "Max O'Krepki"
+date: "2/15/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Okay, so I had hoped to do something different but it looks like the SF 311 data is a pretty big data set that I could work on.
+Honestly, let me just do that. 
+
+```{r}
+library(readr)
+library(dplyr)
+library(RColorBrewer)
+library(stringr)
+library(ggplot2)
+```
+
+```{r}
+sf_311 <- read_csv("311_Cases.csv")
+
+# Columns after 20 aren't really needed so I'll just drop those. 
+sf_311 <- sf_311[,1:20]
+```
+
+Let's take a look at how many unique categories there are and if that's a meaningful way to analyze this data. 
+```{r}
+length(unique(sf_311$Category))
+# Quite a few categories, let's do a group by and see what sort of request volume there is by type. Could just narrow down to the most meaningful categories. 
+
+summary_by_category <- sf_311 %>% group_by(Category) %>% summarize("category_summary" = n())
+
+# Let's make a percent of total column to get a better sense of what's going on. 
+summary_by_category$pct_of_total <- (summary_by_category$category_summary/sum(summary_by_category$category_summary))*100
+summary_by_category <- summary_by_category[order(-summary_by_category$pct_of_total),]
+summary_by_category$cumsum <- cumsum(summary_by_category$pct_of_total)
+```
+
+
+Make a chart of the running totals? Let me see if I can't plot some categories by day of week. Maybe even time of day. 
+```{r}
+myPalette <- brewer.pal(10, "Set3")
+pie(summary_by_category$pct_of_total[1:10], labels = summary_by_category$Category[1:10], border = "white", col = myPalette)
+```
+
+
+```{r}
+str_split(sf_311$Opened[1], " ")[[1]][1]
+sf_311$date <- unlist(lapply(sf_311$Opened, function(date_time) return(str_split(date_time ,patter = " ")[[1]][1])))
+```
+
+
+```{r}
+sf_311$date_correct <- as.Date(sf_311$date, "%m/%d/%Y")
+sf_311$day_of_week <- weekdays(sf_311$date_correct)
+```
+
+```{r}
+weekday_summary <- sf_311 %>% group_by(Category, day_of_week) %>% summarize("daily_summary" = n())
+```
+
+Let me just filter down to the top three categories and see about plotting those. 
+```{r}
+weekday_summary <- weekday_summary %>% filter(Category %in% c("Street and Sidewalk Cleaning", "Graffiti", "Encampments"))
+```
+
+
+summary_by_category <- summary_by_category[order(-summary_by_category$pct_of_total),]
+```{r}
+weekday_summary$day_of_week <- factor(weekday_summary$day_of_week, levels= c("Sunday", "Monday", 
+    "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))
+weekday_summary <- weekday_summary[order(weekday_summary$Category, weekday_summary$day_of_week), ]
+```
+
+
+```{r}
+ggplot(weekday_summary) + geom_col(aes(x = day_of_week, y = daily_summary, fill = Category))
+```
+
