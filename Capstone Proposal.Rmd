@@ -27,15 +27,13 @@ library(ggplot2)
 library(ggthemes)
 ```
 
-Gonna be honest, the importa doesn't seem a whole lot faster than readr. 
-Looks like things survived the great reorganization. 
+
 ```{r}
 sf_311 <- fread("/Users/max/Dropbox/Data Incubator/311_Cases.csv")
 sf_311 <- sf_311[,1:20]
 ```
 
-Hmm, there could also be something interesting going on with the cases that aren't resolved. Probably move this up top when it's all said and done. 
-Could also look at time between opening and closing. Just stick to basics for now. 
+
 ```{r}
 #Let me see if I can't get it to work with the dates as is. 
 mdy_hms(sf_311$Opened[1:10], tz = "US/Pacific")
@@ -48,7 +46,6 @@ sf_311 <- sf_311[!is.na(sf_311$Closed),]
 ```
 
 
-I'll move up top because I'll use this info to create the separate data frames. 
 ```{r}
 summary_by_category <- sf_311 %>% group_by(Category) %>% summarize("category_summary" = n())
 # Let's make a percent of total column to get a better sense of what's going on. 
@@ -68,7 +65,6 @@ treemap(summary_by_category[1:10,], index = "Category", vSize = "pct_of_total", 
 ```
 
 ```{r}
-# The dataset is fairly large and I don't need it all, let me filter down to the top four categories. Hmmm, the RData file is still pretty big. Maybe worry about this when I start to make the presentation. 
 sf_311 <- sf_311 %>% filter(Category %in% summary_by_category$Category[1:4])
 ```
 
@@ -95,7 +91,6 @@ sf_311_streets <- sf_311_streets %>% filter(Longitude >= -123 & Longitude <= -12
 At this point, I'll create the data frames for each type then rinse and repeat 4 times. 
 
 Micro goals 
-Create data frame for just streets, or use the one I've already got, the calculate time difference between calls and go from there. Even sf_311 streets is just a little too big. It's really just about the output, I don't need to save the data each time. 
 ```{r}
 # This orders the data frame by date.
 sf_311_streets <- arrange(sf_311_streets, Opened)
@@ -145,13 +140,11 @@ p7
 
 
 # Geographic hotspots. 
-What do I need? Shapefile at the block group level of SF. Should have that somewhere in the thesis work. I tell you what, just upload it here and create an R binary object of it in this working directory. I forgot it's the whole bay area, this will be a round about way to get to SF but it'll work. 
-
 Data's loaded.
 ```{r}
 ba_bgs <- st_read("/Users/max/Dropbox/Stanford Stuff/Classes/PUBLPOL/Y23 Spring 2020/Thesis/Data/sf_bay_clipped/2e262912-207a-4424-9e17-08041688d59c202044-1-130emnv.fypm.shp")
 
-population_data_bgs <- read_csv("~/Dropbox/Stanford Stuff/Classes/PUBLPOL/Y23 Spring 2020/Thesis/Data/population_data_bgs.csv")
+# population_data_bgs <- read_csv("~/Dropbox/Stanford Stuff/Classes/PUBLPOL/Y23 Spring 2020/Thesis/Data/population_data_bgs.csv")
 
 ba_bgs <- ba_bgs[,c(6,10)]
 ba_bgs$geoid_long <- paste("1500000US", ba_bgs$blkgrpid, sep = "")
@@ -160,23 +153,15 @@ ba_bgs <- ba_bgs[,c(2,3)]
 ba_bgs <- ba_bgs %>% filter(geoid_long %in% population_data_bgs$id)
 ```
 
-Map things to make sure they look good. 
-```{r}
-leaflet(ba_bgs) %>% 
-  addProviderTiles(providers$Stamen.Toner) %>% addPolygons()
-```
-
 I'll just start with the street and sidewalk cleaning category. Anything I do there abstracts to other categories. 
 ```{r}
 sf_311_streets %>% group_by(`Request Details`) %>% summarize(n())
 ```
 
-
-
 Group calls by geoid. Okay, not sure what happened the first time but it appears to have worked this time. 
 ```{r}
 sf_311_streets_summary <- sf_311_streets %>% group_by(geoid_long) %>% summarize("calls_bg" = n())
-plot(sf_311_streets_summary["calls_bg"])
+# plot(sf_311_streets_summary["calls_bg"])
 
 # Join it back to the bgs then plot. 
 sf_311_streets_summary_bgs <- ba_bgs %>% left_join(as.data.frame(sf_311_streets_summary)[,1:2], by = "geoid_long")
@@ -185,7 +170,7 @@ range(sf_311_streets_summary_bgs$calls_bg, na.rm = TRUE) # Looks like some NAs a
 
 # This did the trick. 
 sf_311_streets_summary_bgs <- sf_311_streets_summary_bgs[!is.na(sf_311_streets_summary_bgs$calls_bg),]
-plot(sf_311_streets_summary_bgs["calls_bg"])
+# plot(sf_311_streets_summary_bgs["calls_bg"])
 ```
 
 Let's add population data and see how things look normalized. You know, I'm not sure I really need the population stuff. This might just get cut. 
@@ -200,7 +185,7 @@ range(sf_311_streets_summary_bgs$`2017`)
 sf_311_streets_summary_bgs$calls_per_pop <- sf_311_streets_summary_bgs$calls_bg/sf_311_streets_summary_bgs$`2017`
 
 # The problem is that there's the outlier. How about if I remove that. 
-plot(sf_311_streets_summary_bgs["calls_per_pop"])
+# plot(sf_311_streets_summary_bgs["calls_per_pop"])
 hist(sf_311_streets_summary_bgs$calls_per_pop)
 
 range(sf_311_streets_summary_bgs$calls_per_pop)
@@ -212,26 +197,9 @@ range(filter(sf_311_streets_summary_bgs, z_score <= 2)$z_score)
 hist(filter(sf_311_streets_summary_bgs, z_score <= 2)$calls_bg)
 ```
 
-Make a red color palette for it. 
-```{r}
-pal_red <- colorNumeric(
-  palette = "Reds",
-  domain = filter(sf_311_streets_summary_bgs, z_score <= 2)$calls_bg
-)
-```
-
 Let me try a discrete color scheme but with lots of buckets. 9 is the limit for RcolorBrewer. I bet I can find another, larger color palette but it's fine for now. 
 ```{r}
 binpal <- colorBin("Oranges", sf_311_streets_summary_bgs$calls_bg, 9, pretty = FALSE)
-```
-
-
-
-Funny enough, I'm not seeing much of a spatial pattern especially when adjusted for population. Could be interesting to see about time. With that being said, there's definitely a pattern when considering raw calls per bg.  
-```{r}
-leaflet(filter(sf_311_streets_summary_bgs, z_score <= 2)) %>% 
-  addProviderTiles(providers$CartoDB.Positron) %>% addPolygons(stroke = FALSE, smoothFactor = 0.2, fillOpacity = 1,
-    color = ~pal_red(calls_bg)) 
 ```
 
 
