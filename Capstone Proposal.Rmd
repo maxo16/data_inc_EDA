@@ -11,9 +11,8 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+At this point, I should focus on making this more flexible. Just go ahead and cutout the population stuff, it's just fluff that isn't needed right now. Should probably get rid of a bunch of other fluff as well. 
 
-It could be fun to try out data.table and see how that works. 
-At some point, I probably do want to cut out the code I'm not using, it'll just be cleaner. 
 ```{r}
 library(data.table)
 library(dplyr)
@@ -25,9 +24,10 @@ library(lubridate)
 library(htmltools)
 library(ggplot2)
 library(ggthemes)
+library(tidyverse)
 ```
 
-
+I'll just leave it as fread for now but in the future I'll probably keep using the tidyverse read_csv. I'm just not really seeing any performance gains here. 
 ```{r}
 sf_311 <- fread("/Users/max/Dropbox/Data Incubator/311_Cases.csv")
 sf_311 <- sf_311[,1:20]
@@ -41,17 +41,21 @@ mdy_hms(sf_311$Opened[1:10], tz = "US/Pacific")
 sf_311$Opened <- mdy_hms(sf_311$Opened, tz = "US/Pacific")
 sf_311$Closed <- mdy_hms(sf_311$Closed, tz = "US/Pacific")
 
-# Looks like in the closed category there are some NAs, just remove these rows. Relative to the size of the data set, doesn't look like it was too many.  
-sf_311 <- sf_311[!is.na(sf_311$Closed),]
+# Looks like the tidyverse solutions might be slower, sometimes, they're definitely faster at other times. However, I think the tradeoff in the easier syntax is worth it, though. 
+sf_311 <- sf_311 %>% drop_na(Closed)
+
+# Filter out coordinates that are clearly wrong. 
+sf_311 <- sf_311 %>% filter(Longitude >= -123 & Longitude <= -122 & Latitude >= 37.7 & Latitude <= 38)
 ```
 
 
 ```{r}
+# Lesson learned is, when doing something, search for a tidyverse solution. 
 summary_by_category <- sf_311 %>% group_by(Category) %>% summarize("category_summary" = n())
-# Let's make a percent of total column to get a better sense of what's going on. 
-summary_by_category$pct_of_total <- (summary_by_category$category_summary/sum(summary_by_category$category_summary))*100
-summary_by_category <- summary_by_category[order(-summary_by_category$pct_of_total),]
-summary_by_category$cumsum <- cumsum(summary_by_category$pct_of_total)
+
+summary_by_category <- summary_by_category %>% arrange(-category_summary)
+
+summary_by_category <- summary_by_category %>% mutate(pct_of_total = (category_summary/sum(category_summary))*100, cumpct = cumsum(pct_of_total))
 
 ```
 
@@ -68,52 +72,24 @@ treemap(summary_by_category[1:10,], index = "Category", vSize = "pct_of_total", 
 sf_311 <- sf_311 %>% filter(Category %in% summary_by_category$Category[1:4])
 ```
 
-
-Move creation of sf_311_streets here. 
-Need to generate sf object from sf_311_streets
-```{r}
-sf_311_streets <- sf_311 %>% filter(Category == "Street and Sidewalk Cleaning")
-# Making the sf object from the data.table
-sf_311_streets <- st_as_sf(sf_311_streets, coords = c("Longitude", "Latitude"), crs = "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
-
-# Doing the spatial join to get block group data to each call
-sf_311_streets <- st_join(sf_311_streets, ba_bgs["geoid_long"])
-
-# Adding back in lat and long because it's just easier when plotting in leaflet. Although, it takes too long to plot all of the points so I won't end up doing it but this can just stay here for now. 
-sf_311_streets <- sf_311_streets %>% left_join(sf_311[,c(1,16,17)], by = "CaseID")
-
-# Filter out coordinates that are clearly wrong. 
-sf_311_streets <- sf_311_streets %>% filter(Longitude >= -123 & Longitude <= -122 & Latitude >= 37.7 & Latitude <= 38)
-```
-
-
-
 At this point, I'll create the data frames for each type then rinse and repeat 4 times. 
 
 Micro goals 
 ```{r}
+sf_311_streets <- sf_311 %>% filter(Category == "Street and Sidewalk Cleaning")
+
 # This orders the data frame by date.
 sf_311_streets <- arrange(sf_311_streets, Opened)
 
 # Create a lag variable between calls. That's the next thing I'm interested in. 
 sf_311_streets <- sf_311_streets %>% mutate(time_diff = Opened - lag(Opened), diff_secs = as.numeric(time_diff, units = 'secs'))
 
-# Definitely some outliers. Calculate z scores, remove, then plot again. 
-hist(sf_311_streets$diff_secs)
-range(sf_311_streets$diff_secs, na.rm = TRUE)
 
+# This is just a good column to have, makes sorting based on statistical criteria a little easier.
 sf_311_streets <- sf_311_streets %>% mutate(diff_z_score = scale(diff_secs))
-
-hist(filter(sf_311_streets, diff_z_score <= 1)$diff_secs)
-
-mean(sf_311_streets$diff_secs, na.rm = TRUE)
-median(sf_311_streets$diff_secs, na.rm = TRUE)
-
-mean(filter(sf_311_streets, diff_z_score <= 2)$diff_secs, na.rm = TRUE)
-median(filter(sf_311_streets, diff_z_score <= 2)$diff_secs, na.rm = TRUE)
 ```
 
-Create an economist style histogram
+Create an economist style histogram. I'm not filtering the data frame that's going in, I'm just manually cutting it off in the plotting part. 
 ```{r}
 barfill <- "#4271AE"
 barlines <- "#1F3552"
@@ -140,62 +116,52 @@ p7
 
 
 # Geographic hotspots. 
-Data's loaded.
+Data's loaded. May have to move this up since I'm using it for the histogram as well. 
+So it was just the one line I needed to move. So things look good, however, I'm realizing that when using the population data, it filtered to only the city. Figure out a way to bring that back in. 
 ```{r}
 ba_bgs <- st_read("/Users/max/Dropbox/Stanford Stuff/Classes/PUBLPOL/Y23 Spring 2020/Thesis/Data/sf_bay_clipped/2e262912-207a-4424-9e17-08041688d59c202044-1-130emnv.fypm.shp")
 
-# population_data_bgs <- read_csv("~/Dropbox/Stanford Stuff/Classes/PUBLPOL/Y23 Spring 2020/Thesis/Data/population_data_bgs.csv")
+population_data_bgs <- read_csv("~/Dropbox/Stanford Stuff/Classes/PUBLPOL/Y23 Spring 2020/Thesis/Data/population_data_bgs.csv")
 
-ba_bgs <- ba_bgs[,c(6,10)]
-ba_bgs$geoid_long <- paste("1500000US", ba_bgs$blkgrpid, sep = "")
+# Don't think I need any of this now because it was for the population data. Just comment out and see if the assets are recreated. 
+
+ba_bgs <- ba_bgs[,c(6,10)] #Don't really need the id's but may as well keep them so I have a unique identifier for each row. 
+ba_bgs <- ba_bgs %>% mutate(geoid_long = paste("1500000US", blkgrpid, sep = ""))
+
 ba_bgs <- ba_bgs[,c(2,3)]
-
+# This is where it filters to just block groups in SF, I'll just keep this and rename things accordingly. 
 ba_bgs <- ba_bgs %>% filter(geoid_long %in% population_data_bgs$id)
 ```
 
+Move creation of sf_311_streets here. 
+```{r}
+# Making the sf object from the data.table
+sf_311_streets <- st_as_sf(sf_311_streets, coords = c("Longitude", "Latitude"), crs = "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
+
+# Doing the spatial join to get block group data to each call
+sf_311_streets <- st_join(sf_311_streets, ba_bgs["geoid_long"])
+```
+
+
 I'll just start with the street and sidewalk cleaning category. Anything I do there abstracts to other categories. 
 ```{r}
+# Would probably be good to keep in mind for further analysis. 
 sf_311_streets %>% group_by(`Request Details`) %>% summarize(n())
 ```
 
 Group calls by geoid. Okay, not sure what happened the first time but it appears to have worked this time. 
+
+This summary data frame is the new data frame that contains the data that will eventually get mapped. 
 ```{r}
 sf_311_streets_summary <- sf_311_streets %>% group_by(geoid_long) %>% summarize("calls_bg" = n())
-# plot(sf_311_streets_summary["calls_bg"])
 
-# Join it back to the bgs then plot. 
+# Join it back to the bgs then plot. Have to join it to the sf object,  
 sf_311_streets_summary_bgs <- ba_bgs %>% left_join(as.data.frame(sf_311_streets_summary)[,1:2], by = "geoid_long")
-plot(sf_311_streets_summary_bgs["calls_bg"])
-range(sf_311_streets_summary_bgs$calls_bg, na.rm = TRUE) # Looks like some NAs are hanging around. Let me see about getting rid of those. 
 
 # This did the trick. 
-sf_311_streets_summary_bgs <- sf_311_streets_summary_bgs[!is.na(sf_311_streets_summary_bgs$calls_bg),]
-# plot(sf_311_streets_summary_bgs["calls_bg"])
+sf_311_streets_summary_bgs <-  sf_311_streets_summary_bgs %>% drop_na(calls_bg)
 ```
 
-Let's add population data and see how things look normalized. You know, I'm not sure I really need the population stuff. This might just get cut. 
-```{r}
-sf_311_streets_summary_bgs <- sf_311_streets_summary_bgs %>% left_join(population_data_bgs[,c(1,15)], by = c("geoid_long" = "id"))
-plot(sf_311_streets_summary_bgs["2017"])
-
-# Replace zeros with 1's.
-sf_311_streets_summary_bgs[sf_311_streets_summary_bgs$`2017` == 0,]$`2017` <- 1
-range(sf_311_streets_summary_bgs$`2017`)
-
-sf_311_streets_summary_bgs$calls_per_pop <- sf_311_streets_summary_bgs$calls_bg/sf_311_streets_summary_bgs$`2017`
-
-# The problem is that there's the outlier. How about if I remove that. 
-# plot(sf_311_streets_summary_bgs["calls_per_pop"])
-hist(sf_311_streets_summary_bgs$calls_per_pop)
-
-range(sf_311_streets_summary_bgs$calls_per_pop)
-hist(filter(sf_311_streets_summary_bgs, calls_per_pop < 10)$calls_per_pop)
-
-sf_311_streets_summary_bgs$z_score <- scale(sf_311_streets_summary_bgs$calls_bg)
-
-range(filter(sf_311_streets_summary_bgs, z_score <= 2)$z_score)
-hist(filter(sf_311_streets_summary_bgs, z_score <= 2)$calls_bg)
-```
 
 Let me try a discrete color scheme but with lots of buckets. 9 is the limit for RcolorBrewer. I bet I can find another, larger color palette but it's fine for now. 
 ```{r}
