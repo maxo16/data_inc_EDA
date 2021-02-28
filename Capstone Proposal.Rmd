@@ -72,29 +72,34 @@ treemap(summary_by_category[1:10,], index = "Category", vSize = "pct_of_total", 
 sf_311 <- sf_311 %>% filter(Category %in% summary_by_category$Category[1:4])
 ```
 
-At this point, I'll create the data frames for each type then rinse and repeat 4 times. 
-
-Micro goals 
+Create the category of interest variable here. 
 ```{r}
-sf_311_streets <- sf_311 %>% filter(Category == "Street and Sidewalk Cleaning")
+kitty <- summary_by_category$Category[2]
 
-# This orders the data frame by date.
-sf_311_streets <- arrange(sf_311_streets, Opened)
-
-# Create a lag variable between calls. That's the next thing I'm interested in. 
-sf_311_streets <- sf_311_streets %>% mutate(time_diff = Opened - lag(Opened), diff_secs = as.numeric(time_diff, units = 'secs'))
-
-
-# This is just a good column to have, makes sorting based on statistical criteria a little easier.
-sf_311_streets <- sf_311_streets %>% mutate(diff_z_score = scale(diff_secs))
+# Creates the filtered data frame. 
+sf_311_kitty <- sf_311 %>% filter(Category == kitty)
 ```
+
 
 Create an economist style histogram. I'm not filtering the data frame that's going in, I'm just manually cutting it off in the plotting part. 
 ```{r}
+# The "math" for the histogram
+# This orders the data frame by date.
+sf_311_kitty <- arrange(sf_311_kitty, Opened)
+
+# Create a lag variable between calls. That's the next thing I'm interested in. 
+sf_311_kitty <- sf_311_kitty %>% mutate(time_diff = Opened - lag(Opened), diff_secs = as.numeric(time_diff, units = 'secs'))
+
+
+# This is just a good column to have, makes sorting based on statistical criteria a little easier.
+sf_311_kitty <- sf_311_kitty %>% mutate(diff_z_score = scale(diff_secs))
+
+
+# Code that creates the actual histogram. 
 barfill <- "#4271AE"
 barlines <- "#1F3552"
 
-p7 <- ggplot(sf_311_streets, aes(x = diff_secs)) +
+p7 <- ggplot(sf_311_kitty, aes(x = diff_secs)) +
         geom_histogram(aes(y = ..count..), binwidth = 60,
                    colour = barlines, fill = barfill) +
         scale_x_continuous(name = "Time between service call",
@@ -133,44 +138,44 @@ ba_bgs <- ba_bgs[,c(2,3)]
 ba_bgs <- ba_bgs %>% filter(geoid_long %in% population_data_bgs$id)
 ```
 
-Move creation of sf_311_streets here. 
+Move creation of sf_311_kitty here. 
 ```{r}
 # Making the sf object from the data.table
-sf_311_streets <- st_as_sf(sf_311_streets, coords = c("Longitude", "Latitude"), crs = "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
+sf_311_kitty <- st_as_sf(sf_311_kitty, coords = c("Longitude", "Latitude"), crs = "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
 
 # Doing the spatial join to get block group data to each call
-sf_311_streets <- st_join(sf_311_streets, ba_bgs["geoid_long"])
+sf_311_kitty <- st_join(sf_311_kitty, ba_bgs["geoid_long"])
 ```
 
 
 I'll just start with the street and sidewalk cleaning category. Anything I do there abstracts to other categories. 
 ```{r}
 # Would probably be good to keep in mind for further analysis. 
-sf_311_streets %>% group_by(`Request Details`) %>% summarize(n())
+sf_311_kitty %>% group_by(`Request Details`) %>% summarize(n())
 ```
 
 Group calls by geoid. Okay, not sure what happened the first time but it appears to have worked this time. 
 
 This summary data frame is the new data frame that contains the data that will eventually get mapped. 
 ```{r}
-sf_311_streets_summary <- sf_311_streets %>% group_by(geoid_long) %>% summarize("calls_bg" = n())
+sf_311_kitty_summary <- sf_311_kitty %>% group_by(geoid_long) %>% summarize("calls_bg" = n())
 
 # Join it back to the bgs then plot. Have to join it to the sf object,  
-sf_311_streets_summary_bgs <- ba_bgs %>% left_join(as.data.frame(sf_311_streets_summary)[,1:2], by = "geoid_long")
+sf_311_kitty_summary <- ba_bgs %>% left_join(as.data.frame(sf_311_kitty_summary)[,1:2], by = "geoid_long")
 
 # This did the trick. 
-sf_311_streets_summary_bgs <-  sf_311_streets_summary_bgs %>% drop_na(calls_bg)
+sf_311_kitty_summary <-  sf_311_kitty_summary %>% drop_na(calls_bg)
 ```
 
 
 Let me try a discrete color scheme but with lots of buckets. 9 is the limit for RcolorBrewer. I bet I can find another, larger color palette but it's fine for now. 
 ```{r}
-binpal <- colorBin("Oranges", sf_311_streets_summary_bgs$calls_bg, 9, pretty = FALSE)
+binpal <- colorBin("Oranges", sf_311_kitty_summary$calls_bg, 9, pretty = FALSE)
 ```
 
 
 ```{r}
-leaflet(sf_311_streets_summary_bgs) %>%
+leaflet(sf_311_kitty_summary) %>%
   addProviderTiles(providers$CartoDB.Positron) %>%
   addPolygons(stroke = FALSE, smoothFactor = 0.2, fillOpacity = 1, color = ~binpal(calls_bg), popup = ~htmlEscape(calls_bg)) %>% 
   addLegend("bottomright", pal = binpal, values = ~calls_bg,
