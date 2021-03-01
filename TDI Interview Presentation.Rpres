@@ -1,0 +1,245 @@
+```{r, echo = FALSE, include = FALSE}
+library(data.table)
+library(dplyr)
+library(treemap)
+library(sf)
+library(readr)
+library(leaflet)
+library(lubridate)
+library(htmltools)
+library(ggplot2)
+library(ggthemes)
+library(tidyverse)
+source("cat_selector.R")
+library(tmap)
+```
+
+
+```{r prep chunk, echo = FALSE, include = FALSE, cache = TRUE}
+
+# opts_chunk$set(cache=TRUE)
+
+sf_311 <- fread("/Users/max/Dropbox/Data Incubator/311_Cases.csv")
+sf_311 <- sf_311[,1:20]
+
+#Let me see if I can't get it to work with the dates as is. 
+mdy_hms(sf_311$Opened[1:10], tz = "US/Pacific")
+
+sf_311$Opened <- mdy_hms(sf_311$Opened, tz = "US/Pacific")
+sf_311$Closed <- mdy_hms(sf_311$Closed, tz = "US/Pacific")
+
+# I'll do abbreviations since the dayss could get a little crowded on the charts and there shouldn't be any ambiguity. 
+sf_311 <- sf_311 %>% mutate(Closed_wday = wday(Closed, label = TRUE, abbr = TRUE))
+# Want to do open because that's when the calls come in. 
+sf_311 <- sf_311 %>% mutate(Opened_wday = wday(Opened, label = TRUE, abbr = TRUE))
+# Looks like the tidyverse solutions might be slower, sometimes, they're definitely faster at other times. However, I think the tradeoff in the easier syntax is worth it, though. 
+sf_311 <- sf_311 %>% drop_na(Closed)
+
+# Filter out coordinates that are clearly wrong. 
+sf_311 <- sf_311 %>% filter(Longitude >= -123 & Longitude <= -122 & Latitude >= 37.7 & Latitude <= 38)
+
+# Lesson learned is, when doing something, search for a tidyverse solution. 
+summary_by_category <- sf_311 %>% group_by(Category) %>% summarize("category_summary" = n())
+
+summary_by_category <- summary_by_category %>% arrange(-category_summary)
+
+summary_by_category <- summary_by_category %>% mutate(pct_of_total = (category_summary/sum(category_summary))*100, cumpct = cumsum(pct_of_total))
+
+```
+
+
+Predicting 311 Service Calls in San Francisco
+========================================================
+author: Max O'Krepki
+date: March 1st, 2021
+autosize: true
+
+Presentation Outline
+========================================================
+
+* Data set overview
+* Exploratory analysis
+* Existing solutions and next steps
+
+San Francisco 311 Data Set
+========================================================
+
+* 311 Calls to the city.
+* Date range: July 1st, 2008 - present; continuously updated. 
+* ~4,680,000 observations.
+* 100 different categories of service calls; top 20 ~95% of calls. 
+
+Calls to the city
+========================================================
+* Treemap of all 311 calls to the city.
+
+```{r, echo = FALSE, cache = TRUE}
+treemap(summary_by_category, index = "Category", vSize = "pct_of_total", type = "index", title = "")
+```
+
+Calls to the city
+========================================================
+* Treemap of top 10 categories of 311 calls.
+
+```{r, echo = FALSE, cache = TRUE}
+# Tree map of top 10
+treemap(summary_by_category[1:10,], index = "Category", vSize = "pct_of_total", type = "index", title = "")
+```
+
+Top 4 Categories
+========================================================
+
+```{r, echo = FALSE, cache = TRUE}
+summary_table <- summary_by_category[1:4,]
+names(summary_table)[2:4] <- c("Number of Calls", "Percent of Total", "Cumulative Percent")
+kable(summary_table, digits = 0, format.args = list(big.mark = ",", 
+  scientific = FALSE))
+```
+
+
+Street and Sidewalk Cleaning
+========================================================
+
+```{r, echo=FALSE}
+sf_311_kitty <- kitty_finder(1)
+
+source("histo_helper.R")
+hist_kitty
+```
+
+Street and Sidewalk Cleaning
+========================================================
+
+```{r, echo=FALSE}
+source("column_helper.R")
+column_kitty
+```
+
+
+Street and Sidewalk Cleaning
+========================================================
+
+```{r, echo=FALSE}
+# sf_311_kitty <- kitty_finder(1)
+load("map1_data.RData")
+
+names(sf_311_kitty_summary1)[2] <- "Calls Per BG"
+tmap_mode("plot")
+map_kitty <- tm_shape(sf_311_kitty_summary1) + tm_polygons("Calls Per BG", style = "order") + tm_layout(legend.title.size = 3,
+          legend.text.size = 2)
+map_kitty
+```
+
+
+Graffiti
+========================================================
+
+```{r, echo=FALSE}
+sf_311_kitty <- kitty_finder(2)
+
+source("histo_helper.R")
+hist_kitty
+```
+
+Graffiti
+========================================================
+
+```{r, echo=FALSE}
+source("column_helper.R")
+column_kitty
+```
+
+
+Graffiti
+========================================================
+
+```{r, echo=FALSE}
+# sf_311_kitty <- kitty_finder(1)
+load("map2_data.RData")
+
+names(sf_311_kitty_summary2)[2] <- "Calls Per BG"
+tmap_mode("plot")
+map_kitty <- tm_shape(sf_311_kitty_summary2) + tm_polygons("Calls Per BG", style = "order") + tm_layout(legend.title.size = 3,
+          legend.text.size = 2)
+map_kitty
+```
+
+Encampments
+========================================================
+
+```{r, echo=FALSE}
+sf_311_kitty <- kitty_finder(3)
+
+source("histo_helper.R")
+hist_kitty
+```
+
+Encampments
+========================================================
+
+```{r, echo=FALSE}
+source("column_helper.R")
+column_kitty
+```
+
+
+Encampments
+========================================================
+
+```{r, echo=FALSE}
+# sf_311_kitty <- kitty_finder(1)
+load("map3_data.RData")
+
+names(sf_311_kitty_summary3)[2] <- "Calls Per BG"
+tmap_mode("plot")
+map_kitty <- tm_shape(sf_311_kitty_summary3) + tm_polygons("Calls Per BG", style = "order") + tm_layout(legend.title.size = 3,
+          legend.text.size = 2)
+map_kitty
+```
+
+
+
+Abandoned Vehicles
+========================================================
+
+```{r, echo=FALSE}
+sf_311_kitty <- kitty_finder(4)
+
+source("histo_helper.R")
+hist_kitty
+```
+
+Abandoned Vehicles
+========================================================
+
+```{r, echo=FALSE}
+source("column_helper.R")
+column_kitty
+```
+
+
+Abandoned Vehicles
+========================================================
+
+```{r, echo=FALSE}
+# sf_311_kitty <- kitty_finder(1)
+load("map4_data.RData")
+
+names(sf_311_kitty_summary4)[2] <- "Calls Per BG"
+tmap_mode("plot")
+map_kitty <- tm_shape(sf_311_kitty_summary4) + tm_polygons("Calls Per BG", style = "order") + tm_layout(legend.title.size = 3,
+          legend.text.size = 2)
+map_kitty
+```
+
+
+Existing Solutions and Next Steps
+========================================================
+
+* Existing solutions
+  + Generally context specific
+  + Blog post
+
+* Next steps
+  + Random forest, k-nearest neighbors
+  + Regression based approach

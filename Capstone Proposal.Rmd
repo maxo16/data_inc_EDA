@@ -25,6 +25,8 @@ library(htmltools)
 library(ggplot2)
 library(ggthemes)
 library(tidyverse)
+library(htmlwidgets)
+library(tmap)
 ```
 
 I'll just leave it as fread for now but in the future I'll probably keep using the tidyverse read_csv. I'm just not really seeing any performance gains here. 
@@ -41,6 +43,10 @@ mdy_hms(sf_311$Opened[1:10], tz = "US/Pacific")
 sf_311$Opened <- mdy_hms(sf_311$Opened, tz = "US/Pacific")
 sf_311$Closed <- mdy_hms(sf_311$Closed, tz = "US/Pacific")
 
+# I'll do abbreviations since the dayss could get a little crowded on the charts and there shouldn't be any ambiguity. 
+sf_311 <- sf_311 %>% mutate(Closed_wday = wday(Closed, label = TRUE, abbr = TRUE))
+# Want to do open because that's when the calls come in. 
+sf_311 <- sf_311 %>% mutate(Opened_wday = wday(Opened, label = TRUE, abbr = TRUE))
 # Looks like the tidyverse solutions might be slower, sometimes, they're definitely faster at other times. However, I think the tradeoff in the easier syntax is worth it, though. 
 sf_311 <- sf_311 %>% drop_na(Closed)
 
@@ -80,8 +86,50 @@ kitty <- summary_by_category$Category[2]
 sf_311_kitty <- sf_311 %>% filter(Category == kitty)
 ```
 
+```{r}
+sf_311_kitty <- kitty_finder(1)
 
+source("histo_helper.R")
+hist_kitty
+
+source("column_helper.R")
+column_kitty
+
+sf_311_kitty <- kitty_finder(1)
+sf_311_kitty_summary1 <- source("map_helper2.R")$value
+save(sf_311_kitty_summary1, file = "map1_data.RData")
+# load("map1_data.RData")
+
+sf_311_kitty <- kitty_finder(2)
+sf_311_kitty_summary2 <- source("map_helper2.R")$value
+save(sf_311_kitty_summary2, file = "map2_data.RData")
+
+sf_311_kitty <- kitty_finder(3)
+sf_311_kitty_summary3 <- source("map_helper2.R")$value
+save(sf_311_kitty_summary3, file = "map3_data.RData")
+
+sf_311_kitty <- kitty_finder(4)
+sf_311_kitty_summary4 <- source("map_helper2.R")$value
+save(sf_311_kitty_summary4, file = "map4_data.RData")
+
+```
+
+```{r}
+the_word <- unlist(source("tester.R"))[1][1]
+print(unlist(source("tester.R"))[1][[1]])
+
+hist_kitty1 <- source("histo_helper.R")$value
+hist_kitty2 <- source("histo_helper.R")$value
+
+sf_311_kitty <- kitty_finder(1)
+col_kitty1 <- source("column_helper.R")$value
+sf_311_kitty <- kitty_finder(2)
+col_kitty2 <- source("column_helper.R")$value
+```
+
+# Histogram of time between calls. 
 Create an economist style histogram. I'm not filtering the data frame that's going in, I'm just manually cutting it off in the plotting part. 
+
 ```{r}
 # The "math" for the histogram
 # This orders the data frame by date.
@@ -120,9 +168,39 @@ p7
 ```
 
 
+# Column chart of days.
+
+Micro-goals just need to turn the dates into a days of the week column. Should be able to use the lubridate package to do this. Probably want to do this up above actually
+```{r}
+sf_311_kitty_wday <- sf_311_kitty %>% group_by(Opened_wday) %>% summarize("calls_by_day" = n())
+
+# Code that creates the actual histogram. 
+barfill <- "#4271AE"
+barlines <- "#1F3552"
+
+column_kitty <- ggplot(sf_311_kitty_wday, aes(x = Opened_wday, y = calls_by_day)) +
+        geom_col(colour = barlines, fill = barfill) +   
+        ggtitle("Column chart of service calls per day") +
+        scale_y_continuous(name = "Count", labels = scales::comma) +
+        labs(x = "Day of the week") +
+        theme_economist() +
+        theme(legend.position = "bottom", legend.direction = "horizontal",
+              legend.box = "horizontal",
+              legend.key.size = unit(1, "cm"),
+              plot.title = element_text(family="Tahoma"),
+              text = element_text(family = "Tahoma", hjust = 0.5),
+              axis.title = element_text(size = 12),
+              legend.text = element_text(size = 9),
+              legend.title=element_text(face = "bold", size = 9))
+column_kitty
+```
+
 # Geographic hotspots. 
 Data's loaded. May have to move this up since I'm using it for the histogram as well. 
 So it was just the one line I needed to move. So things look good, however, I'm realizing that when using the population data, it filtered to only the city. Figure out a way to bring that back in. 
+
+Reading in the shapefile.
+
 ```{r}
 ba_bgs <- st_read("/Users/max/Dropbox/Stanford Stuff/Classes/PUBLPOL/Y23 Spring 2020/Thesis/Data/sf_bay_clipped/2e262912-207a-4424-9e17-08041688d59c202044-1-130emnv.fypm.shp")
 
@@ -138,7 +216,7 @@ ba_bgs <- ba_bgs[,c(2,3)]
 ba_bgs <- ba_bgs %>% filter(geoid_long %in% population_data_bgs$id)
 ```
 
-Move creation of sf_311_kitty here. 
+Creation of sf_311_kitty as sf
 ```{r}
 # Making the sf object from the data.table
 sf_311_kitty <- st_as_sf(sf_311_kitty, coords = c("Longitude", "Latitude"), crs = "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
@@ -157,6 +235,7 @@ sf_311_kitty %>% group_by(`Request Details`) %>% summarize(n())
 Group calls by geoid. Okay, not sure what happened the first time but it appears to have worked this time. 
 
 This summary data frame is the new data frame that contains the data that will eventually get mapped. 
+
 ```{r}
 sf_311_kitty_summary <- sf_311_kitty %>% group_by(geoid_long) %>% summarize("calls_bg" = n())
 
@@ -169,6 +248,7 @@ sf_311_kitty_summary <-  sf_311_kitty_summary %>% drop_na(calls_bg)
 
 
 Let me try a discrete color scheme but with lots of buckets. 9 is the limit for RcolorBrewer. I bet I can find another, larger color palette but it's fine for now. 
+
 ```{r}
 binpal <- colorBin("Oranges", sf_311_kitty_summary$calls_bg, 9, pretty = FALSE)
 ```
@@ -184,6 +264,7 @@ leaflet(sf_311_kitty_summary) %>%
   ) %>% setView(lng =-122.44, lat = 37.758, zoom = 13)
   
 ```
+
 
 
 
