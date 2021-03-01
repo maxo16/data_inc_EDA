@@ -6,3 +6,6 @@
 
 
 [Interview Presentation](https://maxo16.github.io/data_inc_EDA/TDI%20Interview%20Presentation.html)
+
+
+[Interview Presentation V2](https://maxo16.github.io/data_inc_EDA/TDI%20Interview%20Presentationv2.html)
