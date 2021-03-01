@@ -1,0 +1,13 @@
+---
+title: "Test markdown"
+author: "Max O'Krepki"
+date: "2/28/2021"
+output: html_document
+---
+
+```{r}
+library(leaflet)
+load("map1.RData")
+map_kitty
+```
+
